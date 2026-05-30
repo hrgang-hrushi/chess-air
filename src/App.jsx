@@ -14,6 +14,9 @@ import {
 
 const LEADERBOARD_STORAGE_KEY = 'chess-air-leaderboard-v1';
 const PLAYER_SETUP_STORAGE_KEY = 'chess-air-player-setup-v1';
+const POINTS_FOR_WIN = 3;
+const POINTS_FOR_DRAW = 0.5;
+const MAX_LEADERBOARD_DISPLAY = 5;
 
 const readJsonFromStorage = (key, fallback) => {
     if (typeof window === 'undefined') return fallback;
@@ -37,14 +40,15 @@ const App = () => {
     const [sensitivity, setSensitivity] = useState(1.2);
     const [isFreeMove, setIsFreeMove] = useState(false);
     const storedPlayers = readJsonFromStorage(PLAYER_SETUP_STORAGE_KEY, null);
-    const [showOnboarding, setShowOnboarding] = useState(() => !storedPlayers);
+    const hasStoredPlayers = !!(storedPlayers && storedPlayers.white && storedPlayers.black);
+    const [showOnboarding, setShowOnboarding] = useState(() => !hasStoredPlayers);
     const [playerSetup, setPlayerSetup] = useState(() => (
-        storedPlayers && storedPlayers.white && storedPlayers.black
+        hasStoredPlayers
             ? { white: storedPlayers.white, black: storedPlayers.black }
             : { white: '', black: '' }
     ));
     const [players, setPlayers] = useState(() => (
-        storedPlayers && storedPlayers.white && storedPlayers.black
+        hasStoredPlayers
             ? { white: storedPlayers.white, black: storedPlayers.black }
             : { white: 'White', black: 'Black' }
     ));
@@ -64,6 +68,7 @@ const App = () => {
 
     const rawTarget = useRef({ x: 50, y: 50 });
     const pinchBuffer = useRef([]);
+    const sensitivityRef = useRef(sensitivity);
 
     const LERP = 0.15;
 
@@ -95,16 +100,16 @@ const App = () => {
             if (resultWinner === 'draw') {
                 next[whiteIndex].draws += 1;
                 next[blackIndex].draws += 1;
-                next[whiteIndex].points += 1;
-                next[blackIndex].points += 1;
+                next[whiteIndex].points += POINTS_FOR_DRAW;
+                next[blackIndex].points += POINTS_FOR_DRAW;
             } else if (resultWinner === 'w') {
                 next[whiteIndex].wins += 1;
                 next[blackIndex].losses += 1;
-                next[whiteIndex].points += 3;
+                next[whiteIndex].points += POINTS_FOR_WIN;
             } else if (resultWinner === 'b') {
                 next[blackIndex].wins += 1;
                 next[whiteIndex].losses += 1;
-                next[blackIndex].points += 3;
+                next[blackIndex].points += POINTS_FOR_WIN;
             }
 
             const nowIso = new Date().toISOString();
@@ -122,8 +127,8 @@ const App = () => {
     }, [persistLeaderboard, players.black, players.white]);
 
     const startMultiplayerStudy = useCallback(() => {
-        const normalizedWhite = playerSetup.white.trim() || 'White Player';
-        const normalizedBlack = playerSetup.black.trim() || 'Black Player';
+        const normalizedWhite = playerSetup.white.trim() || 'White';
+        const normalizedBlack = playerSetup.black.trim() || 'Black';
         const selectedPlayers = { white: normalizedWhite, black: normalizedBlack };
 
         setPlayers(selectedPlayers);
@@ -149,6 +154,10 @@ const App = () => {
         frame = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(frame);
     }, []);
+
+    useEffect(() => {
+        sensitivityRef.current = sensitivity;
+    }, [sensitivity]);
 
     const initTracking = useCallback(() => {
         if (!window.Hands || !window.Camera) return;
@@ -187,8 +196,8 @@ const App = () => {
                 const screenCenterX = 0.5;
                 const screenCenterY = 0.5;
 
-                let offsetX = (mirrorX - screenCenterX) * sensitivity;
-                let offsetY = (index.y - screenCenterY) * sensitivity;
+                let offsetX = (mirrorX - screenCenterX) * sensitivityRef.current;
+                let offsetY = (index.y - screenCenterY) * sensitivityRef.current;
 
                 let targetX = (offsetX + 0.5) * 100;
                 let targetY = (offsetY + 0.5) * 100;
@@ -221,7 +230,7 @@ const App = () => {
             width: 1280, height: 720,
         });
         camera.start();
-    }, [sensitivity]);
+    }, []);
 
     useEffect(() => {
         const loadMediaPipe = async () => {
@@ -243,7 +252,7 @@ const App = () => {
         loadMediaPipe();
     }, [initTracking]);
 
-    const checkGameOver = (currentChess) => {
+    const checkAndRecordGameOver = useCallback((currentChess) => {
         if (resultRecorded) return false;
         if (currentChess.isCheckmate()) {
             const winnerColor = currentChess.turn() === 'w' ? 'b' : 'w';
@@ -259,7 +268,7 @@ const App = () => {
             return true;
         }
         return false;
-    };
+    }, [resultRecorded, updateLeaderboard]);
 
     const getSquareFromCoords = useCallback(() => {
         const col = Math.floor((pointerPos.x / 100) * 8);
@@ -289,28 +298,28 @@ const App = () => {
             }
         } else if (moveFrom) {
             if (square && square !== moveFrom) {
-                try {
-                    const newGame = new Chess(game.fen());
-                    if (isFreeMove) {
-                        const piece = newGame.get(moveFrom);
+                const newGame = new Chess(game.fen());
+                if (isFreeMove) {
+                    const piece = newGame.get(moveFrom);
+                    if (piece) {
                         newGame.remove(moveFrom);
                         newGame.put(piece, square);
                         setHistory(h => [...h, { san: `${piece.type.toUpperCase()}${moveFrom}->${square}`, color: piece.color, fen: game.fen() }]);
                         setGame(newGame);
-                    } else {
-                        const move = newGame.move({ from: moveFrom, to: square, promotion: 'q' });
-                        if (move) {
-                            setHistory(h => [...h, { san: move.san, color: move.color, fen: game.fen() }]);
-                            setGame(newGame);
-                            checkGameOver(newGame);
-                        }
                     }
-                } catch { return; }
+                } else {
+                    const move = newGame.move({ from: moveFrom, to: square, promotion: 'q' });
+                    if (move) {
+                        setHistory(h => [...h, { san: move.san, color: move.color, fen: game.fen() }]);
+                        setGame(newGame);
+                        checkAndRecordGameOver(newGame);
+                    }
+                }
             }
             setMoveFrom(null);
             setOptionSquares({});
         }
-    }, [isPinching, pointerPos, activeHandFound, moveFrom, game, getSquareFromCoords, winner]);
+    }, [isPinching, pointerPos, activeHandFound, moveFrom, game, getSquareFromCoords, winner, isFreeMove, checkAndRecordGameOver]);
 
     const undoMove = () => {
         if (history.length === 0 || winner) return;
@@ -518,7 +527,7 @@ const App = () => {
                             <span className="text-[10px] font-black uppercase tracking-widest">Leaderboard</span>
                         </div>
                         <div className="space-y-2 max-h-36 overflow-y-auto custom-scrollbar pr-1">
-                            {leaderboard.slice(0, 5).map((entry, index) => (
+                            {leaderboard.slice(0, MAX_LEADERBOARD_DISPLAY).map((entry, index) => (
                                 <div key={entry.name} className="flex items-center justify-between p-2 rounded-lg text-[10px] bg-black/40 border border-white/5">
                                     <div>
                                         <div className="font-black text-zinc-200">{index + 1}. {entry.name}</div>
