@@ -12,6 +12,21 @@ import {
     Settings2
 } from 'lucide-react';
 
+const LEADERBOARD_STORAGE_KEY = 'chess-air-leaderboard-v1';
+const PLAYER_SETUP_STORAGE_KEY = 'chess-air-player-setup-v1';
+
+const readJsonFromStorage = (key, fallback) => {
+    if (typeof window === 'undefined') return fallback;
+    try {
+        const value = window.localStorage.getItem(key);
+        if (!value) return fallback;
+        const parsed = JSON.parse(value);
+        return parsed ?? fallback;
+    } catch {
+        return fallback;
+    }
+};
+
 const App = () => {
     const [game, setGame] = useState(new Chess());
     const [moveFrom, setMoveFrom] = useState(null);
@@ -21,6 +36,23 @@ const App = () => {
     const [gestureIntensity, setGestureIntensity] = useState(0);
     const [sensitivity, setSensitivity] = useState(1.2);
     const [isFreeMove, setIsFreeMove] = useState(false);
+    const storedPlayers = readJsonFromStorage(PLAYER_SETUP_STORAGE_KEY, null);
+    const [showOnboarding, setShowOnboarding] = useState(() => !storedPlayers);
+    const [playerSetup, setPlayerSetup] = useState(() => (
+        storedPlayers && storedPlayers.white && storedPlayers.black
+            ? { white: storedPlayers.white, black: storedPlayers.black }
+            : { white: '', black: '' }
+    ));
+    const [players, setPlayers] = useState(() => (
+        storedPlayers && storedPlayers.white && storedPlayers.black
+            ? { white: storedPlayers.white, black: storedPlayers.black }
+            : { white: 'White', black: 'Black' }
+    ));
+    const [leaderboard, setLeaderboard] = useState(() => {
+        const storedLeaderboard = readJsonFromStorage(LEADERBOARD_STORAGE_KEY, []);
+        return Array.isArray(storedLeaderboard) ? storedLeaderboard : [];
+    });
+    const [resultRecorded, setResultRecorded] = useState(false);
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -35,6 +67,76 @@ const App = () => {
 
     const LERP = 0.15;
 
+    const persistLeaderboard = useCallback((entries) => {
+        localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(entries));
+    }, []);
+
+    const updateLeaderboard = useCallback((resultWinner) => {
+        setLeaderboard((prev) => {
+            const next = [...prev];
+            const indexByName = new Map(next.map((entry, index) => [entry.name, index]));
+
+            const ensurePlayer = (name) => {
+                if (!indexByName.has(name)) {
+                    indexByName.set(name, next.length);
+                    next.push({ name, wins: 0, losses: 0, draws: 0, games: 0, points: 0, lastPlayed: null });
+                }
+                return indexByName.get(name);
+            };
+
+            const whiteName = players.white || 'White';
+            const blackName = players.black || 'Black';
+            const whiteIndex = ensurePlayer(whiteName);
+            const blackIndex = ensurePlayer(blackName);
+
+            next[whiteIndex].games += 1;
+            next[blackIndex].games += 1;
+
+            if (resultWinner === 'draw') {
+                next[whiteIndex].draws += 1;
+                next[blackIndex].draws += 1;
+                next[whiteIndex].points += 1;
+                next[blackIndex].points += 1;
+            } else if (resultWinner === 'w') {
+                next[whiteIndex].wins += 1;
+                next[blackIndex].losses += 1;
+                next[whiteIndex].points += 3;
+            } else if (resultWinner === 'b') {
+                next[blackIndex].wins += 1;
+                next[whiteIndex].losses += 1;
+                next[blackIndex].points += 3;
+            }
+
+            const nowIso = new Date().toISOString();
+            next[whiteIndex].lastPlayed = nowIso;
+            next[blackIndex].lastPlayed = nowIso;
+
+            const sorted = [...next].sort((a, b) => {
+                if (b.points !== a.points) return b.points - a.points;
+                if (b.wins !== a.wins) return b.wins - a.wins;
+                return a.name.localeCompare(b.name);
+            });
+            persistLeaderboard(sorted);
+            return sorted;
+        });
+    }, [persistLeaderboard, players.black, players.white]);
+
+    const startMultiplayerStudy = useCallback(() => {
+        const normalizedWhite = playerSetup.white.trim() || 'White Player';
+        const normalizedBlack = playerSetup.black.trim() || 'Black Player';
+        const selectedPlayers = { white: normalizedWhite, black: normalizedBlack };
+
+        setPlayers(selectedPlayers);
+        localStorage.setItem(PLAYER_SETUP_STORAGE_KEY, JSON.stringify(selectedPlayers));
+        setShowOnboarding(false);
+        setResultRecorded(false);
+        setGame(new Chess());
+        setHistory([]);
+        setWinner(null);
+        setMoveFrom(null);
+        setOptionSquares({});
+    }, [playerSetup.black, playerSetup.white]);
+
     useEffect(() => {
         let frame;
         const loop = () => {
@@ -48,27 +150,9 @@ const App = () => {
         return () => cancelAnimationFrame(frame);
     }, []);
 
-    useEffect(() => {
-        const loadMediaPipe = async () => {
-            const scripts = [
-                'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js',
-                'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
-                'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js'
-            ];
-            for (const src of scripts) {
-                if (!document.querySelector(`script[src="${src}"]`)) {
-                    await new Promise(r => {
-                        const s = document.createElement('script');
-                        s.src = src; s.onload = r; document.head.appendChild(s);
-                    });
-                }
-            }
-            initTracking();
-        };
-        loadMediaPipe();
-    }, []);
+    const initTracking = useCallback(() => {
+        if (!window.Hands || !window.Camera) return;
 
-    const initTracking = () => {
         const hands = new window.Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
         });
@@ -137,11 +221,43 @@ const App = () => {
             width: 1280, height: 720,
         });
         camera.start();
-    };
+    }, [sensitivity]);
+
+    useEffect(() => {
+        const loadMediaPipe = async () => {
+            const scripts = [
+                'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js',
+                'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
+                'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js'
+            ];
+            for (const src of scripts) {
+                if (!document.querySelector(`script[src="${src}"]`)) {
+                    await new Promise(r => {
+                        const s = document.createElement('script');
+                        s.src = src; s.onload = r; document.head.appendChild(s);
+                    });
+                }
+            }
+            initTracking();
+        };
+        loadMediaPipe();
+    }, [initTracking]);
 
     const checkGameOver = (currentChess) => {
-        if (currentChess.isCheckmate()) { setWinner(currentChess.turn() === 'w' ? 'b' : 'w'); return true; }
-        if (currentChess.isDraw()) { setWinner('draw'); return true; }
+        if (resultRecorded) return false;
+        if (currentChess.isCheckmate()) {
+            const winnerColor = currentChess.turn() === 'w' ? 'b' : 'w';
+            setWinner(winnerColor);
+            updateLeaderboard(winnerColor);
+            setResultRecorded(true);
+            return true;
+        }
+        if (currentChess.isDraw()) {
+            setWinner('draw');
+            updateLeaderboard('draw');
+            setResultRecorded(true);
+            return true;
+        }
         return false;
     };
 
@@ -189,7 +305,7 @@ const App = () => {
                             checkGameOver(newGame);
                         }
                     }
-                } catch (e) { }
+                } catch { return; }
             }
             setMoveFrom(null);
             setOptionSquares({});
@@ -210,6 +326,8 @@ const App = () => {
         setHistory([]);
         setWinner(null);
         setMoveFrom(null);
+        setOptionSquares({});
+        setResultRecorded(false);
     };
 
     return (
@@ -229,12 +347,18 @@ const App = () => {
                     <div className="flex flex-col">
                         <span className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">Turn Control</span>
                         <span className={`text-xs font-bold uppercase ${game.turn() === 'w' ? 'text-white' : 'text-[#ccff00]'}`}>
-                            {game.turn() === 'w' ? 'White' : 'Black'}
+                            {game.turn() === 'w' ? players.white : players.black}
                         </span>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => setShowOnboarding(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all border border-white/5 text-[10px] font-bold uppercase"
+                    >
+                        Multiplayer Setup
+                    </button>
                     <button
                         onClick={undoMove}
                         disabled={history.length === 0}
@@ -321,6 +445,9 @@ const App = () => {
                             <div className="text-center">
                                 <Trophy size={60} className="text-[#ccff00] mx-auto mb-4" />
                                 <h2 className="text-4xl font-black mb-6">SESSION COMPLETE</h2>
+                                <p className="text-xs uppercase tracking-wider text-zinc-400 mb-6">
+                                    {winner === 'draw' ? 'Draw' : `${winner === 'w' ? players.white : players.black} wins`}
+                                </p>
                                 <button onClick={resetGame} className="px-10 py-4 bg-[#ccff00] text-black rounded-full font-black text-xs hover:scale-105 transition-transform flex items-center gap-2 mx-auto">
                                     <RefreshCw size={16} /> RE-INITIALIZE
                                 </button>
@@ -385,8 +512,77 @@ const App = () => {
                         ))}
                         {history.length === 0 && <div className="text-[9px] text-zinc-700 italic text-center mt-10">Waiting for first sequence...</div>}
                     </div>
+                    <div className="mt-4 pt-4 border-t border-white/10">
+                        <div className="flex items-center gap-2 mb-2 text-zinc-500">
+                            <Trophy size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Leaderboard</span>
+                        </div>
+                        <div className="space-y-2 max-h-36 overflow-y-auto custom-scrollbar pr-1">
+                            {leaderboard.slice(0, 5).map((entry, index) => (
+                                <div key={entry.name} className="flex items-center justify-between p-2 rounded-lg text-[10px] bg-black/40 border border-white/5">
+                                    <div>
+                                        <div className="font-black text-zinc-200">{index + 1}. {entry.name}</div>
+                                        <div className="text-[8px] text-zinc-600 uppercase">{entry.wins}W {entry.draws}D {entry.losses}L</div>
+                                    </div>
+                                    <div className="text-[#ccff00] font-black">{entry.points} pts</div>
+                                </div>
+                            ))}
+                            {leaderboard.length === 0 && <div className="text-[9px] text-zinc-700 italic text-center">No matches yet.</div>}
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            {showOnboarding && (
+                <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="w-full max-w-xl bg-zinc-900 border border-white/10 rounded-2xl p-6">
+                        <h2 className="text-xl font-black uppercase tracking-wider mb-2">Multiplayer Study Setup</h2>
+                        <p className="text-sm text-zinc-400 mb-6">Configure both players and start a local study session.</p>
+                        <div className="grid gap-4 mb-6">
+                            <div>
+                                <label className="block text-[10px] uppercase text-zinc-500 mb-2">White Player</label>
+                                <input
+                                    value={playerSetup.white}
+                                    onChange={(e) => setPlayerSetup((prev) => ({ ...prev, white: e.target.value }))}
+                                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm"
+                                    placeholder="Enter white player name"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] uppercase text-zinc-500 mb-2">Black Player</label>
+                                <input
+                                    value={playerSetup.black}
+                                    onChange={(e) => setPlayerSetup((prev) => ({ ...prev, black: e.target.value }))}
+                                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm"
+                                    placeholder="Enter black player name"
+                                />
+                            </div>
+                        </div>
+                        <div className="bg-black/40 border border-white/10 rounded-lg p-4 text-xs text-zinc-400 mb-6">
+                            <div className="font-bold text-zinc-300 mb-2">Onboarding</div>
+                            <ol className="list-decimal pl-5 space-y-1">
+                                <li>Set player names.</li>
+                                <li>Use pinch to pick and release to place pieces.</li>
+                                <li>Complete matches to grow your leaderboard ranking.</li>
+                            </ol>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowOnboarding(false)}
+                                className="px-4 py-2 rounded-lg border border-white/10 text-xs uppercase font-bold text-zinc-400 hover:text-white"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={startMultiplayerStudy}
+                                className="px-5 py-2 rounded-lg bg-[#ccff00] text-black text-xs uppercase font-black"
+                            >
+                                Start Study Match
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style dangerouslySetInnerHTML={{
                 __html: `
