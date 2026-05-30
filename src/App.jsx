@@ -11,6 +11,7 @@ import {
     Undo2,
     Settings2
 } from 'lucide-react';
+import Bot from './Bot';
 
 const App = () => {
     const [game, setGame] = useState(new Chess());
@@ -21,6 +22,8 @@ const App = () => {
     const [gestureIntensity, setGestureIntensity] = useState(0);
     const [sensitivity, setSensitivity] = useState(1.2);
     const [isFreeMove, setIsFreeMove] = useState(false);
+    const [playVsBot, setPlayVsBot] = useState(false);
+    const [botColor, setBotColor] = useState('b'); // Bot plays as black by default
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -370,7 +373,44 @@ const App = () => {
                     </div>
                 </div>
 
-                <div className="w-full lg:w-64 bg-zinc-900/40 p-5 rounded-2xl border border-white/5 flex flex-col h-[560px]">
+                     <div className="w-full lg:w-64 bg-zinc-900/40 p-5 rounded-2xl border border-white/5 flex flex-col h-[560px]">
+                        <div className="flex items-center gap-2 mb-4 text-zinc-500">
+                            <ShieldAlert size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Bot Settings</span>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="flex flex-col gap-2">
+                                <div className="flex justify-between text-[9px] text-zinc-500 uppercase font-bold">
+                                    <span>Play vs Bot</span>
+                                    <button
+                                        onClick={() => setPlayVsBot(!playVsBot)}
+                                        className={`w-8 h-4 rounded-full transition-colors relative ${playVsBot ? 'bg-[#ccff00]' : 'bg-zinc-800'}`}
+                                    >
+                                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${playVsBot ? 'translate-x-[18px]' : 'translate-x-[2px]'}`} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <div className="flex justify-between text-[9px] text-zinc-500 uppercase font-bold">
+                                    <span>Bot Color</span>
+                                    <button
+                                        onClick={() => setBotColor(botColor === 'w' ? 'b' : 'w')}
+                                        className={`w-8 h-4 rounded-full transition-colors relative ${botColor === 'w' ? 'bg-white text-black' : 'bg-[#ccff00]'}`}
+                                    >
+                                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-${botColor === 'w' ? 'black' : 'ccff00'} transition-all ${botColor === 'w' ? 'translate-x-[2px]' : 'translate-x-[18px]'}`} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="bg-black/40 p-3 rounded-lg border border-white/5">
+                                <p className="text-[9px] text-zinc-500 leading-tight">
+                                    <span className="text-white block mb-1">PRO-TIP:</span>
+                                    {playVsBot
+                                        ? `Bot is playing as ${botColor === 'w' ? 'White' : 'Black'}. Make your move when it's your turn!`
+                                        : "Play vs Bot disabled. Enable to play against an AI opponent."}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                     <div className="flex items-center gap-2 mb-4 text-zinc-500">
                         <HistoryIcon size={14} />
                         <span className="text-[10px] font-black uppercase tracking-widest">Neural Log</span>
