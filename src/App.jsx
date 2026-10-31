@@ -410,23 +410,37 @@ const App = () => {
                                 </p>
                             </div>
                         </div>
-                    </div>
-                    <div className="flex items-center gap-2 mb-4 text-zinc-500">
-                        <HistoryIcon size={14} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Neural Log</span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                        {history.map((h, i) => (
-                            <div key={i} className={`flex items-center justify-between p-3 rounded-lg text-[10px] bg-black/40 border border-white/5`}>
-                                <span className="text-zinc-600 font-bold">{i + 1}</span>
-                                <span className={h.color === 'w' ? 'text-white font-black' : 'text-[#ccff00] font-black'}>{h.san}</span>
-                                <span className="text-[8px] text-zinc-700 uppercase">{h.color === 'w' ? 'White' : 'Black'}</span>
-                            </div>
-                        ))}
-                        {history.length === 0 && <div className="text-[9px] text-zinc-700 italic text-center mt-10">Waiting for first sequence...</div>}
+
+                        {playVsBot && (
+                            <Bot
+                                game={game}
+                                setGame={setGame}
+                                setHistory={setHistory}
+                                setWinner={setWinner}
+                                setMoveFrom={setMoveFrom}
+                                setOptionSquares={setOptionSquares}
+                                isFreeMove={isFreeMove}
+                                moveFrom={moveFrom}
+                                botColor={botColor}
+                            />
+                        )}
+
+                        <div className="flex items-center gap-2 mb-4 text-zinc-500 mt-4">
+                            <HistoryIcon size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Neural Log</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                            {history.map((h, i) => (
+                                <div key={i} className={`flex items-center justify-between p-3 rounded-lg text-[10px] bg-black/40 border border-white/5`}>
+                                    <span className="text-zinc-600 font-bold">{i + 1}</span>
+                                    <span className={h.color === 'w' ? 'text-white font-black' : 'text-[#ccff00] font-black'}>{h.san}</span>
+                                    <span className="text-[8px] text-zinc-700 uppercase">{h.color === 'w' ? 'White' : 'Black'}</span>
+                                </div>
+                            ))}
+                            {history.length === 0 && <div className="text-[9px] text-zinc-700 italic text-center mt-10">Waiting for first sequence...</div>}
+                        </div>
                     </div>
                 </div>
-            </div>
 
             <style dangerouslySetInnerHTML={{
                 __html: `

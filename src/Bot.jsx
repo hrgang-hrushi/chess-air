@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Chess } from 'chess.js';
 
-const Bot = ({ game, setGame, setHistory, setWinner, setMoveFrom, setOptionSquares, isFreeMove, moveFrom }) => {
+const Bot = ({ game, setGame, setHistory, setWinner, setMoveFrom, setOptionSquares, isFreeMove, moveFrom, botColor = 'b' }) => {
   const [isBotThinking, setIsBotThinking] = useState(false);
-  const [botColor, setBotColor] = useState('b'); // Bot plays as black by default
 
   const makeBotMove = () => {
     if (!game || game.turn() !== botColor || isFreeMove) return;
