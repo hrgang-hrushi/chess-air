@@ -1,8 +1,28 @@
 {
-  "name": "chess-app",
-  "private": true,
-  "version": "0.0.0",
+  "name": "chess-air",
+  "private": false,
+  "version": "1.0.0",
+  "description": "Real-time local multiplayer chess web application with room codes, live presence, and sleek glassmorphic UI",
   "type": "module",
+  "homepage": "https://github.com/hrgang-hrushi/chess-air#readme",
+  "bugs": {
+    "url": "https://github.com/hrgang-hrushi/chess-air/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hrgang-hrushi/chess-air.git"
+  },
+  "keywords": [
+    "chess",
+    "react",
+    "tailwindcss",
+    "chessjs",
+    "multiplayer",
+    "broadcastchannel",
+    "vite"
+  ],
+  "author": "Hrushi Gangala",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
